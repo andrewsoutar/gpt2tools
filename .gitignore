@@ -1,0 +1,4 @@
+*.o
+/gpt2
+/model.bin
+/hyperparameters.h
