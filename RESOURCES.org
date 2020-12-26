@@ -1,0 +1,23 @@
+#+STARTUP: indent
+
+* GPT-2
+- https://github.com/openai/gpt-2
+- [[https://d4mucfpksywv.cloudfront.net/better-language-models/language-models.pdf][GPT-2 Paper]]
+- [[https://s3-us-west-2.amazonaws.com/openai-assets/research-covers/language-unsupervised/language_understanding_paper.pdf][GPT Paper]]
+- [[https://arxiv.org/pdf/1606.08415.pdf][GELU Activation Function Paper]]
+* Optimization
+- https://en.wikipedia.org/wiki/Strassen_algorithm
+- http://www-ljk.imag.fr/Publications/Basilic/com.lmc.publi.PUBLI_Inproceedings@120f8a5cc8b_1d8e8fb/winoschedule.pdf
+* ANS
+[[https://en.wikipedia.org/wiki/Asymmetric_numeral_systems]]
+[[https://arxiv.org/pdf/1311.2540.pdf][ANS Paper (new)]]
+[[https://arxiv.org/pdf/0902.0271.pdf][ANS Paper (old)]]
+** Posts explaining ANS
+- http://cbloomrants.blogspot.com/2014/01/1-30-14-understanding-ans-1.html
+- https://kedartatwawadi.github.io/post--ANS/
+- https://ro-che.info/articles/2017-08-20-understanding-ans
+- https://patternsinfp.wordpress.com/2018/08/04/asymmetric-numeral-systems/
+- http://fastcompression.blogspot.com/2014/01/fse-decoding-how-it-works.html
+- https://github.com/rygorous/ryg_rans
+- https://fgiesen.wordpress.com/2014/12/08/binary-alias-coding/
+  - [[http://cgi.cs.mcgill.ca/~enewel3/posts/alias-method/index.html][Explanation of the Alias Method]]
