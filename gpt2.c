@@ -1,9 +1,12 @@
+#include "gpt2.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
 
 #include <assert.h>
 #include <err.h>
+#include <errno.h>
 #include <math.h>
 
 #include <unistd.h>
@@ -12,8 +15,6 @@
 #include <sys/stat.h>
 
 #include "hyperparameters.h"
-
-typedef unsigned int token_t;
 
 struct model_parameters {
   float token_embeddings[n_vocab][n_features];
@@ -45,14 +46,17 @@ struct model_parameters {
   float finish_translate[n_features];
 };
 
-size_t max_z(size_t const a, size_t const b) {
+static size_t max_z(size_t const a, size_t const b) {
   return a > b ? a : b;
 }
 
-void normalize(float output[][n_features], float const input[][n_features], size_t n_rows,
-               float const transform[n_features], float const translate[n_features]) {
+static void normalize(const size_t n_rows,
+                      float output[static n_rows][n_features],
+                      const float input[static n_rows][n_features],
+                      const float transform[static n_features],
+                      const float translate[static n_features]) {
   for (size_t row_i = 0; row_i < n_rows; ++row_i) {
-    float const *row_input = input[row_i];
+    const float *row_input = input[row_i];
     float *row_output = output[row_i];
 
     float mean = 0.0f;
@@ -76,15 +80,16 @@ void normalize(float output[][n_features], float const input[][n_features], size
   }
 }
 
-typedef float attention_matrix_t[n_heads][n_context][n_attn_features];
+int gpt2(size_t n_batches,
+         size_t n_tokens,
+         size_t n_past,
 
-typedef struct {
-  attention_matrix_t key, value;
-} batch_context_t[n_layers];
+         float output_probs[static n_batches][n_tokens][n_vocab],
 
-int gpt2(float output_probs[][n_vocab], struct model_parameters const *const p,
-         batch_context_t batches[], size_t const n_batches, size_t const n_past,
-         token_t const tokens[], size_t const n_tokens) {
+         const struct model_parameters *const p,
+         batch_context_t batches[static n_batches],
+
+         token_t const tokens[static n_batches][n_tokens]) {
   float
     (*hidden_state)[n_batches][n_tokens][n_features],
 
@@ -121,7 +126,7 @@ int gpt2(float output_probs[][n_vocab], struct model_parameters const *const p,
     size_t abs_token_pos = n_past + token_i;
 
     for (size_t batch_i = 0; batch_i < n_batches; ++batch_i) {
-      token_t token = tokens[batch_i * n_tokens + token_i];
+      token_t token = tokens[batch_i][token_i];
 
       for (size_t feature_i = 0; feature_i < n_features; ++feature_i) {
         (*hidden_state)[batch_i][token_i][feature_i]
@@ -133,7 +138,7 @@ int gpt2(float output_probs[][n_vocab], struct model_parameters const *const p,
 
   for (size_t layer_i = 0; layer_i < n_layers; ++layer_i) {
     for (size_t batch_i = 0; batch_i < n_batches; ++batch_i) {
-      normalize(*attn_input, (*hidden_state)[batch_i], n_tokens,
+      normalize(n_tokens, *attn_input, (*hidden_state)[batch_i],
                 p->attn_input_transform[layer_i], p->attn_input_translate[layer_i]);
 
       for (size_t head_i = 0; head_i < n_heads; ++head_i) {
@@ -214,7 +219,7 @@ int gpt2(float output_probs[][n_vocab], struct model_parameters const *const p,
       }
 
       for (size_t token_i = 0; token_i < n_tokens; ++token_i) {
-        normalize(neural_input, &(*hidden_state)[batch_i][token_i], 1,
+        normalize(1, neural_input, &(*hidden_state)[batch_i][token_i],
                   p->neural_input_transform[layer_i], p->neural_input_translate[layer_i]);
 
         /* Convolute hidden state into neurons and perform activation */
@@ -243,13 +248,13 @@ int gpt2(float output_probs[][n_vocab], struct model_parameters const *const p,
   }
 
   for (size_t batch_i = 0; batch_i < n_batches; ++batch_i) {
-    normalize((*hidden_state)[batch_i], (*hidden_state)[batch_i], n_tokens,
+    normalize(n_tokens, (*hidden_state)[batch_i], (*hidden_state)[batch_i],
               p->finish_transform, p->finish_translate);
 
     for (size_t token_i = 0; token_i < n_tokens; ++token_i) {
       float max = -INFINITY;
       for (size_t vocab_i = 0; vocab_i < n_vocab; ++vocab_i) {
-        float *output = &output_probs[batch_i * n_tokens + token_i][vocab_i];
+        float *output = &output_probs[batch_i][token_i][vocab_i];
         *output = 0.0f;
         for (size_t feature_i = 0; feature_i < n_features; ++feature_i) {
           *output += (*hidden_state)[batch_i][token_i][feature_i] * p->token_embeddings[vocab_i][feature_i];
@@ -261,11 +266,11 @@ int gpt2(float output_probs[][n_vocab], struct model_parameters const *const p,
 
       float sum = 0.0f;
       for (size_t vocab_i = 0; vocab_i < n_vocab; ++vocab_i) {
-        float *output = &output_probs[batch_i * n_tokens + token_i][vocab_i];
+        float *output = &output_probs[batch_i][token_i][vocab_i];
         sum += (*output = expf(*output - max));
       }
       for (size_t vocab_i = 0; vocab_i < n_vocab; ++vocab_i) {
-        output_probs[batch_i * n_tokens + token_i][vocab_i] /= sum;
+        output_probs[batch_i][token_i][vocab_i] /= sum;
       }
     }
   }
@@ -277,33 +282,17 @@ int gpt2(float output_probs[][n_vocab], struct model_parameters const *const p,
   return 0;
 }
 
-int main(int argc, char *argv[]) {
-  int model_fd = open(argv[1], O_RDONLY | O_CLOEXEC);
-  if (model_fd == -1) {
-    err(EXIT_FAILURE, "open(%s)", argv[1]);
-  }
-  struct model_parameters const *const p = mmap(NULL, sizeof *p, PROT_READ, MAP_PRIVATE, model_fd, 0);
-  if (p == (void *) -1) {
-    err(EXIT_FAILURE, "mmap(%s)", argv[1]);
-  }
+struct model_parameters const *load_model(const char *model_path) {
+  int model_fd, save_errno;
+  const struct model_parameters *model;
 
-  float (*const output_probs)[1][n_vocab] = malloc(sizeof *output_probs);
-  batch_context_t (*const batches)[1] = malloc(sizeof *batches);
-  if (output_probs == NULL || batches == NULL) {
-    err(EXIT_FAILURE, "malloc");
-  }
-
-  token_t token = 50256;
-  for (size_t i = 0; i < 50; ++i) {
-    if (gpt2(*output_probs, p, *batches, sizeof *batches / sizeof **batches, i, &token, 1) != 0) {
-      err(EXIT_FAILURE, "gpt2");
-    }
-    token = 0;
-    for (size_t vocab_i = 1; vocab_i < n_vocab; ++vocab_i) {
-      if ((*output_probs)[0][vocab_i] > (*output_probs)[0][token]) {
-        token = vocab_i;
-      }
-    }
-    printf("%u\n", token);
-  }
+  if ((model_fd = open(model_path, O_RDONLY | O_CLOEXEC)) < 0)
+    return NULL;
+  model = mmap(NULL, sizeof *model, PROT_READ, MAP_PRIVATE, model_fd, 0);
+  if (model == NULL)
+    save_errno = errno;
+  close(model_fd);
+  if (model == NULL)
+    errno = save_errno;
+  return model;
 }
